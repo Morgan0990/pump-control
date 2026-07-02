@@ -21,6 +21,8 @@
             padding: 20px 0;
             border-bottom: 1px solid rgba(255,255,255,0.1);
             margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 10px;
         }
         .logo {
             font-size: 28px;
@@ -38,7 +40,7 @@
         .status.offline { background: rgba(255,0,0,0.2); color: #ff4444; }
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
             gap: 15px;
             margin-bottom: 30px;
         }
@@ -56,24 +58,25 @@
         .value.warning { color: #ffaa00; }
         .controls {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
             gap: 10px;
             margin: 20px 0;
         }
         .btn {
-            padding: 12px 20px;
+            padding: 12px 16px;
             border: none;
             border-radius: 10px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             transition: all 0.3s;
             font-weight: bold;
+            color: #fff;
         }
         .btn:hover { transform: scale(1.05); }
-        .btn-success { background: #00c853; color: #fff; }
-        .btn-danger { background: #d50000; color: #fff; }
-        .btn-warning { background: #ff6d00; color: #fff; }
-        .btn-primary { background: #2979ff; color: #fff; }
+        .btn-success { background: #00c853; }
+        .btn-danger { background: #d50000; }
+        .btn-warning { background: #ff6d00; }
+        .btn-primary { background: #2979ff; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .history {
             background: rgba(255,255,255,0.05);
@@ -91,12 +94,11 @@
             font-size: 14px;
         }
         .history-item .time { color: #888; }
-        .history-item .cmd { color: #00d4ff; }
         .history-item .info { color: #aaa; }
         @media (max-width: 600px) {
             .grid { grid-template-columns: 1fr 1fr; }
             .controls { grid-template-columns: 1fr 1fr; }
-            .header { flex-direction: column; gap: 10px; }
+            .header { flex-direction: column; text-align: center; }
         }
     </style>
 </head>
@@ -150,9 +152,11 @@
 
     <script>
         let ws = null;
-        // Автоматически определяем адрес сервера
-        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-        const SERVER = protocol + window.location.host;
+        
+        // ВАЖНО: Используем ws:// (НЕ wss://) для Render Free
+        const SERVER = 'ws://' + window.location.host;
+        
+        console.log('🔗 Подключение к:', SERVER);
         
         function connect() {
             try {
@@ -161,23 +165,30 @@
                     document.getElementById('status').className = 'status online';
                     document.getElementById('status').textContent = '✅ Подключено';
                     addEvent('🚀 Соединение установлено');
+                    console.log('✅ WebSocket подключен');
                 };
                 ws.onmessage = (e) => {
                     try {
                         const data = JSON.parse(e.data);
+                        console.log('📩 Получено:', data);
                         updateUI(data);
-                    } catch(err) {}
+                    } catch(err) {
+                        console.log('⚠️ Ошибка парсинга:', err);
+                    }
                 };
                 ws.onclose = () => {
                     document.getElementById('status').className = 'status offline';
                     document.getElementById('status').textContent = '❌ Отключено';
+                    console.log('❌ WebSocket отключен');
                     setTimeout(connect, 5000);
                 };
-                ws.onerror = () => {
+                ws.onerror = (err) => {
                     document.getElementById('status').className = 'status offline';
                     document.getElementById('status').textContent = '⚠️ Ошибка';
+                    console.log('⚠️ WebSocket ошибка:', err);
                 };
             } catch(e) {
+                console.log('❌ Ошибка подключения:', e);
                 setTimeout(connect, 5000);
             }
         }
@@ -251,9 +262,11 @@
                 'status': '📊 Запрос статуса'
             };
             addEvent('👤 ' + (names[cmd] || cmd));
+            console.log('📤 Отправлена команда:', cmd);
         }
         
         // Запуск
+        console.log('🚀 Запуск приложения...');
         connect();
     </script>
 </body>
