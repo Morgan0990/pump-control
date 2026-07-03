@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Управление насосами</title>
+    <title>Управление насосами - График температуры</title>
+    <!-- Подключаем Chart.js для графиков -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -13,7 +15,9 @@
             padding: 20px;
             min-height: 100vh;
         }
-        .container { max-width: 800px; margin: 0 auto; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        /* Шапка */
         .header {
             display: flex;
             justify-content: space-between;
@@ -22,7 +26,7 @@
             border-bottom: 1px solid rgba(255,255,255,0.1);
             margin-bottom: 30px;
             flex-wrap: wrap;
-            gap: 10px;
+            gap: 15px;
         }
         .logo {
             font-size: 28px;
@@ -38,9 +42,34 @@
         }
         .status.online { background: rgba(0,255,100,0.2); color: #00ff64; }
         .status.offline { background: rgba(255,0,0,0.2); color: #ff4444; }
+        
+        /* Навигация */
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        .tab {
+            padding: 10px 25px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            background: rgba(255,255,255,0.05);
+            color: #888;
+            transition: all 0.3s;
+        }
+        .tab:hover { background: rgba(255,255,255,0.1); }
+        .tab.active {
+            background: linear-gradient(45deg, #00d4ff, #7b2ffc);
+            color: #fff;
+        }
+        
+        /* Карточки статуса */
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 15px;
             margin-bottom: 30px;
         }
@@ -52,22 +81,82 @@
             text-align: center;
         }
         .card .label { color: #888; font-size: 13px; margin-bottom: 8px; }
-        .card .value { font-size: 20px; font-weight: bold; }
+        .card .value { font-size: 24px; font-weight: bold; }
         .value.success { color: #00ff64; }
         .value.danger { color: #ff4444; }
         .value.warning { color: #ffaa00; }
+        .value.info { color: #00d4ff; }
+        
+        /* График */
+        .chart-container {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 25px;
+            border: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 30px;
+            position: relative;
+            height: 400px;
+        }
+        .chart-container h3 {
+            margin-bottom: 20px;
+            color: #fff;
+        }
+        
+        /* Статистика */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .stat-card .stat-label { color: #888; font-size: 14px; }
+        .stat-card .stat-value { font-size: 28px; font-weight: bold; color: #00d4ff; }
+        .stat-card .stat-sub { color: #666; font-size: 12px; margin-top: 5px; }
+        
+        /* Селектор месяца */
+        .month-selector {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .month-selector select, .month-selector button {
+            padding: 8px 15px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.05);
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .month-selector select option { background: #1a1a3e; }
+        .month-selector button {
+            background: linear-gradient(45deg, #00d4ff, #7b2ffc);
+            border: none;
+            transition: all 0.3s;
+        }
+        .month-selector button:hover { transform: scale(1.05); }
+        
+        /* Управление */
         .controls {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
             gap: 10px;
             margin: 20px 0;
         }
         .btn {
-            padding: 12px 16px;
+            padding: 12px 20px;
             border: none;
             border-radius: 10px;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 14px;
             transition: all 0.3s;
             font-weight: bold;
             color: #fff;
@@ -77,7 +166,9 @@
         .btn-danger { background: #d50000; }
         .btn-warning { background: #ff6d00; }
         .btn-primary { background: #2979ff; }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-info { background: #00bcd4; }
+        
+        /* История */
         .history {
             background: rgba(255,255,255,0.05);
             border-radius: 15px;
@@ -95,68 +186,171 @@
         }
         .history-item .time { color: #888; }
         .history-item .info { color: #aaa; }
+        
+        /* Скрытые секции */
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
         @media (max-width: 600px) {
             .grid { grid-template-columns: 1fr 1fr; }
             .controls { grid-template-columns: 1fr 1fr; }
             .header { flex-direction: column; text-align: center; }
+            .chart-container { height: 250px; }
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- Шапка -->
         <div class="header">
-            <div class="logo">💧 Pump Control</div>
+            <div class="logo">💧 Pump Control v2.0</div>
             <div class="status offline" id="status">Подключение...</div>
         </div>
         
-        <div class="grid" id="statusGrid">
-            <div class="card">
-                <div class="label">⚡ Питание</div>
-                <div class="value" id="voltage">—</div>
+        <!-- Вкладки -->
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('dashboard')">📊 Дашборд</button>
+            <button class="tab" onclick="showTab('chart')">📈 График температуры</button>
+            <button class="tab" onclick="showTab('controls')">🎮 Управление</button>
+        </div>
+        
+        <!-- Вкладка: Дашборд -->
+        <div id="tab-dashboard" class="tab-content active">
+            <div class="grid" id="statusGrid">
+                <div class="card">
+                    <div class="label">⚡ Питание</div>
+                    <div class="value" id="voltage">—</div>
+                </div>
+                <div class="card">
+                    <div class="label">🌡️ Текущая</div>
+                    <div class="value" id="temp">—</div>
+                </div>
+                <div class="card">
+                    <div class="label">💧 Поток</div>
+                    <div class="value" id="flow">—</div>
+                </div>
+                <div class="card">
+                    <div class="label">🔴 Насос 1</div>
+                    <div class="value" id="pump1">—</div>
+                </div>
+                <div class="card">
+                    <div class="label">🔵 Насос 2</div>
+                    <div class="value" id="pump2">—</div>
+                </div>
             </div>
-            <div class="card">
-                <div class="label">🌡️ Температура</div>
-                <div class="value" id="temp">—</div>
-            </div>
-            <div class="card">
-                <div class="label">💧 Поток</div>
-                <div class="value" id="flow">—</div>
-            </div>
-            <div class="card">
-                <div class="label">🔴 Насос 1</div>
-                <div class="value" id="pump1">—</div>
-            </div>
-            <div class="card">
-                <div class="label">🔵 Насос 2</div>
-                <div class="value" id="pump2">—</div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">📊 Средняя за месяц</div>
+                    <div class="stat-value" id="avgTemp">--</div>
+                    <div class="stat-sub" id="avgSub">Загружается...</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">📈 Максимальная</div>
+                    <div class="stat-value" id="maxTemp">--</div>
+                    <div class="stat-sub" id="maxSub">--</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">📉 Минимальная</div>
+                    <div class="stat-value" id="minTemp">--</div>
+                    <div class="stat-sub" id="minSub">--</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">⚡ Отключений света</div>
+                    <div class="stat-value" id="offCount">--</div>
+                    <div class="stat-sub" id="offSub">--</div>
+                </div>
             </div>
         </div>
         
-        <h2 style="margin: 20px 0 10px;">🎮 Управление</h2>
-        <div class="controls">
-            <button class="btn btn-success" onclick="sendCommand('pump1_on')">▶ Pump1 ВКЛ</button>
-            <button class="btn btn-danger" onclick="sendCommand('pump1_off')">⏹ Pump1 ВЫКЛ</button>
-            <button class="btn btn-success" onclick="sendCommand('pump2_on')">▶ Pump2 ВКЛ</button>
-            <button class="btn btn-danger" onclick="sendCommand('pump2_off')">⏹ Pump2 ВЫКЛ</button>
-            <button class="btn btn-warning" onclick="sendCommand('reset_pump1')">↩ Вернуть Pump1</button>
-            <button class="btn btn-primary" onclick="sendCommand('status')">📊 Статус</button>
+        <!-- Вкладка: График -->
+        <div id="tab-chart" class="tab-content">
+            <div class="month-selector">
+                <label>📅 Месяц:</label>
+                <select id="monthSelect">
+                    <option value="1">Январь</option>
+                    <option value="2">Февраль</option>
+                    <option value="3">Март</option>
+                    <option value="4">Апрель</option>
+                    <option value="5">Май</option>
+                    <option value="6">Июнь</option>
+                    <option value="7">Июль</option>
+                    <option value="8">Август</option>
+                    <option value="9">Сентябрь</option>
+                    <option value="10">Октябрь</option>
+                    <option value="11">Ноябрь</option>
+                    <option value="12">Декабрь</option>
+                </select>
+                <label>Год:</label>
+                <input type="number" id="yearSelect" value="2026" style="width:80px;background:rgba(255,255,255,0.05);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:8px;">
+                <button onclick="loadChart()">📊 Обновить график</button>
+                <button onclick="loadChartData()" style="background:rgba(255,255,255,0.1);color:#fff;">🔄 Обновить данные</button>
+            </div>
+            
+            <div class="chart-container">
+                <h3>🌡️ Температура воды за месяц</h3>
+                <canvas id="temperatureChart"></canvas>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">🌡️ Средняя</div>
+                    <div class="stat-value" id="chartAvg">--</div>
+                    <div class="stat-sub">за месяц</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">📈 Максимальная</div>
+                    <div class="stat-value" id="chartMax">--</div>
+                    <div class="stat-sub">за месяц</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">📉 Минимальная</div>
+                    <div class="stat-value" id="chartMin">--</div>
+                    <div class="stat-sub">за месяц</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">📊 Измерений</div>
+                    <div class="stat-value" id="chartCount">--</div>
+                    <div class="stat-sub">за месяц</div>
+                </div>
+            </div>
         </div>
         
-        <div class="history">
-            <h3 style="margin-bottom: 10px;">📋 История</h3>
-            <div id="events">
-                <div class="history-item"><span class="info">⏳ Ожидание данных...</span></div>
+        <!-- Вкладка: Управление -->
+        <div id="tab-controls" class="tab-content">
+            <h2 style="margin: 20px 0 10px;">🎮 Управление насосами</h2>
+            <div class="controls">
+                <button class="btn btn-success" onclick="sendCommand('pump1_on')">▶ Pump1 ВКЛ</button>
+                <button class="btn btn-danger" onclick="sendCommand('pump1_off')">⏹ Pump1 ВЫКЛ</button>
+                <button class="btn btn-success" onclick="sendCommand('pump2_on')">▶ Pump2 ВКЛ</button>
+                <button class="btn btn-danger" onclick="sendCommand('pump2_off')">⏹ Pump2 ВЫКЛ</button>
+                <button class="btn btn-warning" onclick="sendCommand('reset_pump1')">↩ Вернуть Pump1</button>
+                <button class="btn btn-primary" onclick="sendCommand('status')">📊 Статус</button>
+                <button class="btn btn-info" onclick="loadChartData()">📈 График</button>
+            </div>
+            
+            <div class="history">
+                <h3 style="margin-bottom: 10px;">📋 История</h3>
+                <div id="events">
+                    <div class="history-item"><span class="info">⏳ Ожидание данных...</span></div>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
+        // ============================================================
+        // ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+        // ============================================================
         let ws = null;
+        let chart = null;
+        let chartData = [];
         
-        // ВАЖНО: Используем ws:// (НЕ wss://) для Render Free
-        const SERVER = 'ws://' + window.location.host;
-        
-        console.log('🔗 Подключение к:', SERVER);
+        // ============================================================
+        // ПОДКЛЮЧЕНИЕ WEBSOCKET
+        // ============================================================
+        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const SERVER = protocol + window.location.host;
         
         function connect() {
             try {
@@ -165,78 +359,70 @@
                     document.getElementById('status').className = 'status online';
                     document.getElementById('status').textContent = '✅ Подключено';
                     addEvent('🚀 Соединение установлено');
-                    console.log('✅ WebSocket подключен');
+                    loadChartData();
                 };
                 ws.onmessage = (e) => {
                     try {
                         const data = JSON.parse(e.data);
-                        console.log('📩 Получено:', data);
                         updateUI(data);
-                    } catch(err) {
-                        console.log('⚠️ Ошибка парсинга:', err);
-                    }
+                    } catch(err) {}
                 };
                 ws.onclose = () => {
                     document.getElementById('status').className = 'status offline';
                     document.getElementById('status').textContent = '❌ Отключено';
-                    console.log('❌ WebSocket отключен');
                     setTimeout(connect, 5000);
                 };
-                ws.onerror = (err) => {
+                ws.onerror = () => {
                     document.getElementById('status').className = 'status offline';
                     document.getElementById('status').textContent = '⚠️ Ошибка';
-                    console.log('⚠️ WebSocket ошибка:', err);
                 };
             } catch(e) {
-                console.log('❌ Ошибка подключения:', e);
                 setTimeout(connect, 5000);
             }
         }
         
+        // ============================================================
+        // ОБНОВЛЕНИЕ UI
+        // ============================================================
         function updateUI(data) {
-            // Питание
             if (data.voltagePresent !== undefined) {
                 const el = document.getElementById('voltage');
                 el.textContent = data.voltagePresent ? '✅ Есть' : '❌ Нет';
                 el.className = 'value ' + (data.voltagePresent ? 'success' : 'danger');
             }
-            // Температура
             if (data.temperature !== undefined) {
                 const el = document.getElementById('temp');
                 el.textContent = data.temperature.toFixed(1) + '°C';
                 const cls = data.temperature < 30 ? 'success' : data.temperature < 40 ? 'warning' : 'danger';
                 el.className = 'value ' + cls;
             }
-            // Поток
             if (data.flowPresent !== undefined) {
                 const el = document.getElementById('flow');
                 el.textContent = data.flowPresent ? '✅ Есть' : '❌ Нет';
                 el.className = 'value ' + (data.flowPresent ? 'success' : 'danger');
             }
-            // Насос 1
             if (data.pump1Active !== undefined) {
                 const el = document.getElementById('pump1');
                 el.textContent = data.pump1Active ? '🟢 ВКЛ' : '🔴 ВЫКЛ';
                 el.className = 'value ' + (data.pump1Active ? 'success' : 'danger');
             }
-            // Насос 2
             if (data.pump2Active !== undefined) {
                 const el = document.getElementById('pump2');
                 el.textContent = data.pump2Active ? '🟢 ВКЛ' : '🔴 ВЫКЛ';
                 el.className = 'value ' + (data.pump2Active ? 'success' : 'danger');
             }
-            // Добавляем в историю
             let msg = '📊 Статус обновлён';
             if (data.pump1Active !== undefined && data.pump2Active !== undefined) {
                 msg = `🔄 Pump1 ${data.pump1Active ? 'ВКЛ' : 'ВЫКЛ'}, Pump2 ${data.pump2Active ? 'ВКЛ' : 'ВЫКЛ'}`;
             } else if (data.temperature !== undefined) {
                 msg = `🌡️ Температура: ${data.temperature.toFixed(1)}°C`;
-            } else if (data.flowPresent !== undefined) {
-                msg = `💧 Поток: ${data.flowPresent ? 'ЕСТЬ' : 'НЕТ'}`;
             }
             addEvent(msg);
         }
         
+        // ============================================================
+        // ИСТОРИЯ СОБЫТИЙ
+        // ============================================================
         function addEvent(text) {
             const events = document.getElementById('events');
             const time = new Date().toLocaleTimeString();
@@ -247,6 +433,9 @@
             while (events.children.length > 30) events.removeChild(events.lastChild);
         }
         
+        // ============================================================
+        // ОТПРАВКА КОМАНД
+        // ============================================================
         function sendCommand(cmd) {
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 alert('❌ Нет соединения с сервером!');
@@ -262,12 +451,208 @@
                 'status': '📊 Запрос статуса'
             };
             addEvent('👤 ' + (names[cmd] || cmd));
-            console.log('📤 Отправлена команда:', cmd);
         }
         
-        // Запуск
-        console.log('🚀 Запуск приложения...');
+        // ============================================================
+        // ВКЛАДКИ
+        // ============================================================
+        function showTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+            document.querySelector(`.tab[onclick="showTab('${tab}')"]`).classList.add('active');
+            if (tab === 'chart') {
+                setTimeout(loadChart, 300);
+            }
+        }
+        
+        // ============================================================
+        // ЗАГРУЗКА ДАННЫХ ДЛЯ ГРАФИКА
+        // ============================================================
+        function loadChartData() {
+            fetch('/api/current')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.temperature) {
+                        document.getElementById('temp').textContent = data.temperature.toFixed(1) + '°C';
+                    }
+                });
+            
+            // Загружаем статистику
+            const month = document.getElementById('monthSelect').value;
+            const year = document.getElementById('yearSelect').value;
+            
+            fetch(`/api/statistics/month?month=${month}&year=${year}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.avg_temp) {
+                        document.getElementById('avgTemp').textContent = data.avg_temp.toFixed(1) + '°C';
+                        document.getElementById('avgSub').textContent = `Измерений: ${data.total_readings || 0}`;
+                    }
+                    if (data.max_temp) {
+                        document.getElementById('maxTemp').textContent = data.max_temp.toFixed(1) + '°C';
+                        document.getElementById('maxSub').textContent = `Дней: ${data.days || 0}`;
+                    }
+                    if (data.min_temp) {
+                        document.getElementById('minTemp').textContent = data.min_temp.toFixed(1) + '°C';
+                    }
+                });
+            
+            // Статистика света
+            fetch('/api/light/statistics')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('offCount').textContent = data.off_count || 0;
+                    const total = data.total_off_time || 0;
+                    const hours = Math.floor(total / 3600);
+                    const minutes = Math.floor((total % 3600) / 60);
+                    document.getElementById('offSub').textContent = `Без света: ${hours}ч ${minutes}м`;
+                });
+        }
+        
+        // ============================================================
+        // ГРАФИК ТЕМПЕРАТУРЫ
+        // ============================================================
+        function loadChart() {
+            const month = document.getElementById('monthSelect').value;
+            const year = document.getElementById('yearSelect').value;
+            
+            fetch(`/api/temperature/month?month=${month}&year=${year}`)
+                .then(res => res.json())
+                .then(data => {
+                    chartData = data;
+                    updateChart(data);
+                })
+                .catch(err => {
+                    console.error('Ошибка загрузки:', err);
+                });
+        }
+        
+        function updateChart(data) {
+            const ctx = document.getElementById('temperatureChart').getContext('2d');
+            
+            // Подготовка данных
+            const labels = data.map(d => {
+                const parts = d.date.split('-');
+                return `${parts[2]}.${parts[1]}`;
+            });
+            
+            const avgData = data.map(d => d.avg_temp ? parseFloat(d.avg_temp) : null);
+            const minData = data.map(d => d.min_temp ? parseFloat(d.min_temp) : null);
+            const maxData = data.map(d => d.max_temp ? parseFloat(d.max_temp) : null);
+            
+            // Статистика
+            const validData = data.filter(d => d.avg_temp);
+            if (validData.length > 0) {
+                const avgs = validData.map(d => parseFloat(d.avg_temp));
+                const mins = validData.map(d => parseFloat(d.min_temp));
+                const maxs = validData.map(d => parseFloat(d.max_temp));
+                const avg = avgs.reduce((a,b) => a+b, 0) / avgs.length;
+                const min = Math.min(...mins);
+                const max = Math.max(...maxs);
+                
+                document.getElementById('chartAvg').textContent = avg.toFixed(1) + '°C';
+                document.getElementById('chartMax').textContent = max.toFixed(1) + '°C';
+                document.getElementById('chartMin').textContent = min.toFixed(1) + '°C';
+                document.getElementById('chartCount').textContent = validData.length + ' дней';
+            }
+            
+            // Создаём или обновляем график
+            if (chart) {
+                chart.destroy();
+            }
+            
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '🌡️ Средняя температура',
+                            data: avgData,
+                            borderColor: '#00d4ff',
+                            backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 3,
+                            pointBackgroundColor: '#00d4ff'
+                        },
+                        {
+                            label: '📈 Максимальная',
+                            data: maxData,
+                            borderColor: '#ff6b6b',
+                            backgroundColor: 'rgba(255, 107, 107, 0.05)',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointBackgroundColor: '#ff6b6b',
+                            borderDash: [5, 5]
+                        },
+                        {
+                            label: '📉 Минимальная',
+                            data: minData,
+                            borderColor: '#51cf66',
+                            backgroundColor: 'rgba(81, 207, 102, 0.05)',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointBackgroundColor: '#51cf66',
+                            borderDash: [5, 5]
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#fff',
+                                font: { size: 14 }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toFixed(1) + '°C';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#888', maxRotation: 45 }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { 
+                                color: '#888',
+                                callback: function(value) {
+                                    return value + '°C';
+                                }
+                            }
+                        }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    }
+                }
+            });
+        }
+        
+        // ============================================================
+        // ЗАПУСК
+        // ============================================================
+        console.log('🚀 Запуск приложения v2.0');
         connect();
+        
+        // Загружаем график по умолчанию
+        setTimeout(() => {
+            loadChart();
+            loadChartData();
+        }, 1000);
     </script>
 </body>
 </html>
