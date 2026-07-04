@@ -9,12 +9,11 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // ================================================================
-// БАЗА ДАННЫХ (SQLite) - ДЛЯ ХРАНЕНИЯ ТЕМПЕРАТУРЫ
+// БАЗА ДАННЫХ (SQLite)
 // ================================================================
 const sqlite3 = require('sqlite3').verbose();
 const db = new sqlite3.Database('./temperatures.db');
 
-// Создаём таблицу для температуры
 db.run(`
   CREATE TABLE IF NOT EXISTS temperatures (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +26,6 @@ db.run(`
   )
 `);
 
-// Создаём таблицу для статистики света
 db.run(`
   CREATE TABLE IF NOT EXISTS voltage_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,7 +47,7 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // ================================================================
-// API: ПОЛУЧИТЬ ТЕМПЕРАТУРУ ЗА МЕСЯЦ
+// API
 // ================================================================
 app.get('/api/temperature/month', (req, res) => {
   const month = req.query.month || new Date().getMonth() + 1;
@@ -75,9 +73,6 @@ app.get('/api/temperature/month', (req, res) => {
   });
 });
 
-// ================================================================
-// API: ПОЛУЧИТЬ СТАТИСТИКУ ЗА МЕСЯЦ
-// ================================================================
 app.get('/api/statistics/month', (req, res) => {
   const month = req.query.month || new Date().getMonth() + 1;
   const year = req.query.year || new Date().getFullYear();
@@ -100,9 +95,6 @@ app.get('/api/statistics/month', (req, res) => {
   });
 });
 
-// ================================================================
-// API: ПОСЛЕДНИЕ ПОКАЗАНИЯ
-// ================================================================
 app.get('/api/current', (req, res) => {
   db.get(`
     SELECT 
@@ -120,9 +112,6 @@ app.get('/api/current', (req, res) => {
   });
 });
 
-// ================================================================
-// API: СТАТИСТИКА СВЕТА
-// ================================================================
 app.get('/api/light/statistics', (req, res) => {
   db.get(`
     SELECT 
@@ -140,7 +129,7 @@ app.get('/api/light/statistics', (req, res) => {
 });
 
 // ================================================================
-// WEBSOCKET - ПРИЁМ ДАННЫХ ОТ ESP32
+// WEBSOCKET
 // ================================================================
 const server = app.listen(port, () => {
   console.log(`🚀 Сервер запущен на порту ${port}`);
@@ -149,70 +138,120 @@ const server = app.listen(port, () => {
 
 const wss = new WebSocket.Server({ server });
 
+// Переменная для хранения подключения ESP32
+let esp32Connection = null;
+let webClients = [];
+
 wss.on('connection', (ws, req) => {
   const isEsp32 = req.url.includes('esp32');
   
   if (isEsp32) {
     console.log('✅ ESP32 подключена!');
+    esp32Connection = ws;
+    
+    ws.on('message', (message) => {
+      try {
+        const data = JSON.parse(message);
+        console.log('📩 От ESP32:', data);
+        
+        // Передаём данные от ESP32 всем веб-клиентам
+        webClients.forEach(client => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(data));
+          }
+        });
+        
+        // Сохраняем температуру в базу данных
+        if (data.temperature !== undefined && data.saveToDb === true) {
+          const now = new Date();
+          db.run(`
+            INSERT INTO temperatures (temperature, hour, day, month, year)
+            VALUES (?, ?, ?, ?, ?)
+          `, [
+            data.temperature,
+            now.getHours(),
+            now.getDate(),
+            now.getMonth() + 1,
+            now.getFullYear()
+          ], (err) => {
+            if (err) {
+              console.log('❌ Ошибка сохранения температуры:', err);
+            } else {
+              console.log('📊 Температура сохранена в БД:', data.temperature);
+            }
+          });
+        }
+        
+        // Сохраняем события света
+        if (data.voltageEvent) {
+          db.run(`
+            INSERT INTO voltage_events (event_type, duration, total_off_count, total_off_time)
+            VALUES (?, ?, ?, ?)
+          `, [
+            data.voltageEvent,
+            data.duration || 0,
+            data.totalOffCount || 0,
+            data.totalOffTime || 0
+          ], (err) => {
+            if (err) {
+              console.log('❌ Ошибка сохранения события света:', err);
+            } else {
+              console.log('⚡ Событие света сохранено в БД:', data.voltageEvent);
+            }
+          });
+        }
+        
+      } catch (e) {
+        console.log('⚠️ Ошибка обработки от ESP32:', e.message);
+      }
+    });
+    
+    ws.on('close', () => {
+      console.log('❌ ESP32 отключена');
+      esp32Connection = null;
+    });
+    
   } else {
     console.log('✅ Сайт подключен!');
-  }
-  
-  ws.on('message', (message) => {
-    try {
-      const data = JSON.parse(message);
-      console.log('📩 Получено:', data);
-      
-      // Сохраняем температуру в базу данных
-      if (data.temperature !== undefined && data.saveToDb === true) {
-        const now = new Date();
-        db.run(`
-          INSERT INTO temperatures (temperature, hour, day, month, year)
-          VALUES (?, ?, ?, ?, ?)
-        `, [
-          data.temperature,
-          now.getHours(),
-          now.getDate(),
-          now.getMonth() + 1,
-          now.getFullYear()
-        ], (err) => {
-          if (err) {
-            console.log('❌ Ошибка сохранения температуры:', err);
+    webClients.push(ws);
+    
+    ws.on('message', (message) => {
+      try {
+        const data = JSON.parse(message);
+        console.log('📩 От сайта:', data);
+        
+        // ============================================================
+        // ОБРАБОТКА КОМАНД ОТ САЙТА
+        // ============================================================
+        if (data.command) {
+          console.log('📤 Команда от сайта:', data.command);
+          
+          // Отправляем команду на ESP32
+          if (esp32Connection && esp32Connection.readyState === WebSocket.OPEN) {
+            esp32Connection.send(JSON.stringify({
+              type: 'command',
+              command: data.command
+            }));
+            console.log('✅ Команда отправлена на ESP32:', data.command);
           } else {
-            console.log('📊 Температура сохранена в БД:', data.temperature);
+            console.log('❌ ESP32 не подключена!');
+            // Отправляем ответ сайту, что ESP32 не подключена
+            ws.send(JSON.stringify({
+              error: 'ESP32 not connected',
+              message: 'ESP32 не подключена к серверу'
+            }));
           }
-        });
+          return;
+        }
+        
+      } catch (e) {
+        console.log('⚠️ Ошибка обработки от сайта:', e.message);
       }
-      
-      // Сохраняем события света
-      if (data.voltageEvent) {
-        db.run(`
-          INSERT INTO voltage_events (event_type, duration, total_off_count, total_off_time)
-          VALUES (?, ?, ?, ?)
-        `, [
-          data.voltageEvent,
-          data.duration || 0,
-          data.totalOffCount || 0,
-          data.totalOffTime || 0
-        ], (err) => {
-          if (err) {
-            console.log('❌ Ошибка сохранения события света:', err);
-          } else {
-            console.log('⚡ Событие света сохранено в БД:', data.voltageEvent);
-          }
-        });
-      }
-      
-    } catch (e) {
-      console.log('⚠️ Ошибка обработки:', e.message);
-    }
-  });
-  
-  ws.on('close', () => {
-    if (isEsp32) {
-      console.log('❌ ESP32 отключена');
-    } else {
+    });
+    
+    ws.on('close', () => {
       console.log('❌ Сайт отключен');
-    }
-  });
+      webClients = webClients.filter(client => client !== ws);
+    });
+  }
 });
