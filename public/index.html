@@ -381,8 +381,8 @@
         // ПОДКЛЮЧЕНИЕ WEBSOCKET
         // ============================================================
         // ВАЖНО: Используем ws:// для Render (НЕ wss://)
-        const SERVER = 'ws://pump-control-3vri.onrender.com';
-        
+        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+const SERVER = protocol + 'pump-control-3vri.onrender.com';
         function connect() {
             try {
                 // Показываем статус "Подключение..."
