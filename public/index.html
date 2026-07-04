@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Управление насосами - График температуры</title>
-    <!-- Подключаем Chart.js для графиков -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -42,6 +41,7 @@
         }
         .status.online { background: rgba(0,255,100,0.2); color: #00ff64; }
         .status.offline { background: rgba(255,0,0,0.2); color: #ff4444; }
+        .status.waiting { background: rgba(255,255,0,0.2); color: #ffaa00; }
         
         /* Навигация */
         .tabs {
@@ -86,6 +86,7 @@
         .value.danger { color: #ff4444; }
         .value.warning { color: #ffaa00; }
         .value.info { color: #00d4ff; }
+        .value.no-data { color: #666; }
         
         /* График */
         .chart-container {
@@ -127,7 +128,7 @@
             margin-bottom: 20px;
             flex-wrap: wrap;
         }
-        .month-selector select, .month-selector button {
+        .month-selector select, .month-selector button, .month-selector input {
             padding: 8px 15px;
             border: 1px solid rgba(255,255,255,0.2);
             border-radius: 8px;
@@ -143,6 +144,7 @@
             transition: all 0.3s;
         }
         .month-selector button:hover { transform: scale(1.05); }
+        .month-selector input { width: 80px; }
         
         /* Управление */
         .controls {
@@ -167,6 +169,8 @@
         .btn-warning { background: #ff6d00; }
         .btn-primary { background: #2979ff; }
         .btn-info { background: #00bcd4; }
+        .btn-restart { background: #6c757d; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         
         /* История */
         .history {
@@ -186,10 +190,26 @@
         }
         .history-item .time { color: #888; }
         .history-item .info { color: #aaa; }
+        .history-item .cmd { color: #00d4ff; }
+        .history-item .error { color: #ff4444; }
         
-        /* Скрытые секции */
         .tab-content { display: none; }
         .tab-content.active { display: block; }
+        
+        /* Сообщение о подключении */
+        .connection-status {
+            text-align: center;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.05);
+        }
+        .connection-status .status-text {
+            font-size: 16px;
+        }
+        .connection-status .status-text .online { color: #00ff64; }
+        .connection-status .status-text .offline { color: #ff4444; }
+        .connection-status .status-text .waiting { color: #ffaa00; }
         
         @media (max-width: 600px) {
             .grid { grid-template-columns: 1fr 1fr; }
@@ -207,6 +227,13 @@
             <div class="status offline" id="status">Подключение...</div>
         </div>
         
+        <!-- Статус соединения -->
+        <div class="connection-status" id="connectionStatus">
+            <span class="status-text" id="statusText">
+                <span class="offline">⛔ Нет подключения к ESP32</span>
+            </span>
+        </div>
+        
         <!-- Вкладки -->
         <div class="tabs">
             <button class="tab active" onclick="showTab('dashboard')">📊 Дашборд</button>
@@ -219,23 +246,23 @@
             <div class="grid" id="statusGrid">
                 <div class="card">
                     <div class="label">⚡ Питание</div>
-                    <div class="value" id="voltage">—</div>
+                    <div class="value no-data" id="voltage">—</div>
                 </div>
                 <div class="card">
                     <div class="label">🌡️ Текущая</div>
-                    <div class="value" id="temp">—</div>
+                    <div class="value no-data" id="temp">—</div>
                 </div>
                 <div class="card">
                     <div class="label">💧 Поток</div>
-                    <div class="value" id="flow">—</div>
+                    <div class="value no-data" id="flow">—</div>
                 </div>
                 <div class="card">
                     <div class="label">🔴 Насос 1</div>
-                    <div class="value" id="pump1">—</div>
+                    <div class="value no-data" id="pump1">—</div>
                 </div>
                 <div class="card">
                     <div class="label">🔵 Насос 2</div>
-                    <div class="value" id="pump2">—</div>
+                    <div class="value no-data" id="pump2">—</div>
                 </div>
             </div>
             
@@ -243,7 +270,7 @@
                 <div class="stat-card">
                     <div class="stat-label">📊 Средняя за месяц</div>
                     <div class="stat-value" id="avgTemp">--</div>
-                    <div class="stat-sub" id="avgSub">Загружается...</div>
+                    <div class="stat-sub" id="avgSub">Ожидание данных...</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">📈 Максимальная</div>
@@ -282,7 +309,7 @@
                     <option value="12">Декабрь</option>
                 </select>
                 <label>Год:</label>
-                <input type="number" id="yearSelect" value="2026" style="width:80px;background:rgba(255,255,255,0.05);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:8px;">
+                <input type="number" id="yearSelect" value="2026">
                 <button onclick="loadChart()">📊 Обновить график</button>
                 <button onclick="loadChartData()" style="background:rgba(255,255,255,0.1);color:#fff;">🔄 Обновить данные</button>
             </div>
@@ -327,6 +354,8 @@
                 <button class="btn btn-warning" onclick="sendCommand('reset_pump1')">↩ Вернуть Pump1</button>
                 <button class="btn btn-primary" onclick="sendCommand('status')">📊 Статус</button>
                 <button class="btn btn-info" onclick="loadChartData()">📈 График</button>
+                <!-- НОВАЯ КНОПКА ПЕРЕЗАГРУЗКИ ESP32 -->
+                <button class="btn btn-restart" onclick="sendCommand('restart_esp')">🔄 Перезагрузить ESP32</button>
             </div>
             
             <div class="history">
@@ -345,38 +374,76 @@
         let ws = null;
         let chart = null;
         let chartData = [];
+        let reconnectAttempts = 0;
+        let isConnected = false;
         
         // ============================================================
         // ПОДКЛЮЧЕНИЕ WEBSOCKET
         // ============================================================
-        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-        const SERVER = protocol + window.location.host;
+        // ВАЖНО: Используем ws:// для Render (НЕ wss://)
+        const SERVER = 'ws://pump-control-3vri.onrender.com';
         
         function connect() {
             try {
+                // Показываем статус "Подключение..."
+                document.getElementById('status').className = 'status waiting';
+                document.getElementById('status').textContent = '⏳ Подключение...';
+                document.getElementById('statusText').innerHTML = '<span class="waiting">⏳ Подключение к ESP32...</span>';
+                
                 ws = new WebSocket(SERVER);
+                
                 ws.onopen = () => {
+                    console.log('✅ WebSocket подключен');
                     document.getElementById('status').className = 'status online';
                     document.getElementById('status').textContent = '✅ Подключено';
-                    addEvent('🚀 Соединение установлено');
+                    document.getElementById('statusText').innerHTML = '<span class="online">✅ ESP32 подключена</span>';
+                    isConnected = true;
+                    reconnectAttempts = 0;
+                    addEvent('🚀 Соединение установлено', 'cmd');
                     loadChartData();
+                    // Запрашиваем статус
+                    setTimeout(() => sendCommand('status'), 1000);
                 };
+                
                 ws.onmessage = (e) => {
                     try {
                         const data = JSON.parse(e.data);
+                        console.log('📩 Получено:', data);
                         updateUI(data);
-                    } catch(err) {}
+                    } catch(err) {
+                        console.log('⚠️ Ошибка парсинга:', err);
+                    }
                 };
+                
                 ws.onclose = () => {
+                    console.log('❌ WebSocket отключен');
                     document.getElementById('status').className = 'status offline';
                     document.getElementById('status').textContent = '❌ Отключено';
-                    setTimeout(connect, 5000);
+                    document.getElementById('statusText').innerHTML = '<span class="offline">⛔ Нет подключения к ESP32</span>';
+                    isConnected = false;
+                    reconnectAttempts++;
+                    
+                    // Показываем статус "нет данных"
+                    document.querySelectorAll('.value').forEach(el => {
+                        el.className = 'value no-data';
+                        if (el.id !== 'voltage' && el.id !== 'temp' && el.id !== 'flow' && 
+                            el.id !== 'pump1' && el.id !== 'pump2') {
+                            // Не меняем другие элементы
+                        }
+                    });
+                    
+                    // Переподключаемся с задержкой
+                    const delay = Math.min(5000 + reconnectAttempts * 1000, 30000);
+                    setTimeout(connect, delay);
                 };
-                ws.onerror = () => {
+                
+                ws.onerror = (err) => {
+                    console.log('⚠️ WebSocket ошибка:', err);
                     document.getElementById('status').className = 'status offline';
                     document.getElementById('status').textContent = '⚠️ Ошибка';
                 };
             } catch(e) {
+                console.log('❌ Ошибка подключения:', e);
                 setTimeout(connect, 5000);
             }
         }
@@ -385,52 +452,66 @@
         // ОБНОВЛЕНИЕ UI
         // ============================================================
         function updateUI(data) {
+            // Питание
             if (data.voltagePresent !== undefined) {
                 const el = document.getElementById('voltage');
                 el.textContent = data.voltagePresent ? '✅ Есть' : '❌ Нет';
                 el.className = 'value ' + (data.voltagePresent ? 'success' : 'danger');
             }
-            if (data.temperature !== undefined) {
+            // Температура
+            if (data.temperature !== undefined && data.temperature !== 0) {
                 const el = document.getElementById('temp');
                 el.textContent = data.temperature.toFixed(1) + '°C';
                 const cls = data.temperature < 30 ? 'success' : data.temperature < 40 ? 'warning' : 'danger';
                 el.className = 'value ' + cls;
+            } else if (data.temperature !== undefined && data.temperature === 0) {
+                const el = document.getElementById('temp');
+                el.textContent = '❌ Ошибка';
+                el.className = 'value danger';
             }
+            // Поток
             if (data.flowPresent !== undefined) {
                 const el = document.getElementById('flow');
                 el.textContent = data.flowPresent ? '✅ Есть' : '❌ Нет';
                 el.className = 'value ' + (data.flowPresent ? 'success' : 'danger');
             }
+            // Насос 1
             if (data.pump1Active !== undefined) {
                 const el = document.getElementById('pump1');
                 el.textContent = data.pump1Active ? '🟢 ВКЛ' : '🔴 ВЫКЛ';
                 el.className = 'value ' + (data.pump1Active ? 'success' : 'danger');
             }
+            // Насос 2
             if (data.pump2Active !== undefined) {
                 const el = document.getElementById('pump2');
                 el.textContent = data.pump2Active ? '🟢 ВКЛ' : '🔴 ВЫКЛ';
                 el.className = 'value ' + (data.pump2Active ? 'success' : 'danger');
             }
+            
+            // Добавляем в историю
             let msg = '📊 Статус обновлён';
             if (data.pump1Active !== undefined && data.pump2Active !== undefined) {
                 msg = `🔄 Pump1 ${data.pump1Active ? 'ВКЛ' : 'ВЫКЛ'}, Pump2 ${data.pump2Active ? 'ВКЛ' : 'ВЫКЛ'}`;
-            } else if (data.temperature !== undefined) {
+            } else if (data.temperature !== undefined && data.temperature !== 0) {
                 msg = `🌡️ Температура: ${data.temperature.toFixed(1)}°C`;
+            } else if (data.flowPresent !== undefined) {
+                msg = `💧 Поток: ${data.flowPresent ? 'ЕСТЬ' : 'НЕТ'}`;
             }
-            addEvent(msg);
+            addEvent(msg, 'info');
         }
         
         // ============================================================
         // ИСТОРИЯ СОБЫТИЙ
         // ============================================================
-        function addEvent(text) {
+        function addEvent(text, type = 'info') {
             const events = document.getElementById('events');
             const time = new Date().toLocaleTimeString();
             const item = document.createElement('div');
             item.className = 'history-item';
-            item.innerHTML = `<span class="time">${time}</span><span class="info">${text}</span>`;
+            const cls = type === 'cmd' ? 'cmd' : type === 'error' ? 'error' : 'info';
+            item.innerHTML = `<span class="time">${time}</span><span class="${cls}">${text}</span>`;
             events.insertBefore(item, events.firstChild);
-            while (events.children.length > 30) events.removeChild(events.lastChild);
+            while (events.children.length > 50) events.removeChild(events.lastChild);
         }
         
         // ============================================================
@@ -438,9 +519,26 @@
         // ============================================================
         function sendCommand(cmd) {
             if (!ws || ws.readyState !== WebSocket.OPEN) {
-                alert('❌ Нет соединения с сервером!');
+                alert('❌ Нет соединения с ESP32! Попробуйте перезагрузить ESP32.');
                 return;
             }
+            
+            // Команда перезагрузки ESP32
+            if (cmd === 'restart_esp') {
+                if (confirm('🔄 Перезагрузить ESP32?')) {
+                    ws.send(JSON.stringify({ command: cmd }));
+                    addEvent('🔄 Перезагрузка ESP32...', 'cmd');
+                    document.getElementById('status').className = 'status waiting';
+                    document.getElementById('status').textContent = '⏳ Перезагрузка...';
+                    // Отключаем кнопки
+                    document.querySelectorAll('.btn').forEach(b => b.disabled = true);
+                    setTimeout(() => {
+                        document.querySelectorAll('.btn').forEach(b => b.disabled = false);
+                    }, 10000);
+                }
+                return;
+            }
+            
             ws.send(JSON.stringify({ command: cmd }));
             const names = {
                 'pump1_on': '▶ Включен Pump1',
@@ -450,7 +548,7 @@
                 'reset_pump1': '↩ Возврат на Pump1',
                 'status': '📊 Запрос статуса'
             };
-            addEvent('👤 ' + (names[cmd] || cmd));
+            addEvent('👤 ' + (names[cmd] || cmd), 'cmd');
         }
         
         // ============================================================
@@ -467,7 +565,7 @@
         }
         
         // ============================================================
-        // ЗАГРУЗКА ДАННЫХ ДЛЯ ГРАФИКА
+        // ЗАГРУЗКА ДАННЫХ
         // ============================================================
         function loadChartData() {
             fetch('/api/current')
@@ -476,9 +574,9 @@
                     if (data.temperature) {
                         document.getElementById('temp').textContent = data.temperature.toFixed(1) + '°C';
                     }
-                });
+                })
+                .catch(err => console.log('Ошибка загрузки текущих данных:', err));
             
-            // Загружаем статистику
             const month = document.getElementById('monthSelect').value;
             const year = document.getElementById('yearSelect').value;
             
@@ -496,9 +594,9 @@
                     if (data.min_temp) {
                         document.getElementById('minTemp').textContent = data.min_temp.toFixed(1) + '°C';
                     }
-                });
+                })
+                .catch(err => console.log('Ошибка загрузки статистики:', err));
             
-            // Статистика света
             fetch('/api/light/statistics')
                 .then(res => res.json())
                 .then(data => {
@@ -507,11 +605,12 @@
                     const hours = Math.floor(total / 3600);
                     const minutes = Math.floor((total % 3600) / 60);
                     document.getElementById('offSub').textContent = `Без света: ${hours}ч ${minutes}м`;
-                });
+                })
+                .catch(err => console.log('Ошибка загрузки статистики света:', err));
         }
         
         // ============================================================
-        // ГРАФИК ТЕМПЕРАТУРЫ
+        // ГРАФИК
         // ============================================================
         function loadChart() {
             const month = document.getElementById('monthSelect').value;
@@ -524,14 +623,13 @@
                     updateChart(data);
                 })
                 .catch(err => {
-                    console.error('Ошибка загрузки:', err);
+                    console.error('Ошибка загрузки графика:', err);
                 });
         }
         
         function updateChart(data) {
             const ctx = document.getElementById('temperatureChart').getContext('2d');
             
-            // Подготовка данных
             const labels = data.map(d => {
                 const parts = d.date.split('-');
                 return `${parts[2]}.${parts[1]}`;
@@ -541,7 +639,6 @@
             const minData = data.map(d => d.min_temp ? parseFloat(d.min_temp) : null);
             const maxData = data.map(d => d.max_temp ? parseFloat(d.max_temp) : null);
             
-            // Статистика
             const validData = data.filter(d => d.avg_temp);
             if (validData.length > 0) {
                 const avgs = validData.map(d => parseFloat(d.avg_temp));
@@ -557,7 +654,6 @@
                 document.getElementById('chartCount').textContent = validData.length + ' дней';
             }
             
-            // Создаём или обновляем график
             if (chart) {
                 chart.destroy();
             }
@@ -648,11 +744,10 @@
         console.log('🚀 Запуск приложения v2.0');
         connect();
         
-        // Загружаем график по умолчанию
         setTimeout(() => {
             loadChart();
             loadChartData();
-        }, 1000);
+        }, 2000);
     </script>
 </body>
 </html>
