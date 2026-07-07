@@ -7,7 +7,7 @@ const WebSocket = require('ws');
 const cors = require('cors');
 const app = express();
 const port = process.env.PORT || 3000;
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 // ================================================================
 // БАЗА ДАННЫХ (SQLite)
 // ================================================================
@@ -136,14 +136,8 @@ const server = app.listen(port, () => {
   console.log(`🌐 http://localhost:${port}`);
 });
 
-const wss = new WebSocket.Server({ 
-  server,
-  // Разрешаем все протоколы (WS и WSS)
-  handleProtocols: () => 'ws'
-});
+const wss = new WebSocket.Server({ server });
 
-console.log('✅ WebSocket сервер готов (поддержка WS и WSS)');
-// Переменная для хранения подключения ESP32
 let esp32Connection = null;
 
 wss.on('connection', (ws, req) => {
@@ -238,15 +232,12 @@ wss.on('connection', (ws, req) => {
         if (data.command) {
           console.log('📤 Команда от сайта:', data.command);
           
-          // Проверяем, подключена ли ESP32
           if (esp32Connection && esp32Connection.readyState === WebSocket.OPEN) {
-            // Отправляем команду на ESP32
             esp32Connection.send(JSON.stringify({
               command: data.command
             }));
             console.log('✅ Команда отправлена на ESP32:', data.command);
             
-            // Подтверждаем сайту, что команда отправлена
             ws.send(JSON.stringify({
               status: 'ok',
               message: 'Команда отправлена на ESP32',
